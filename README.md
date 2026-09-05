@@ -41,3 +41,8 @@ func fetch(client *http.Client) error {
 ## Out of Scope
 
 This change does not improve the existing Close() detection logic. Early returns and conditional close analysis can be addressed separately.
+
+
+## License 
+
+cleanupcheck is open-source software licensed under the MIT License.
