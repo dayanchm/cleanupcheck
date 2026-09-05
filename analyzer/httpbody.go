@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -37,7 +38,7 @@ func checkFunctionForHTTPBody(pass *analysis.Pass, fn *ast.FuncDecl) {
 			if !ok {
 				continue
 			}
-			if !isHTTPResponseCall(call) {
+			if !isHTTPResponseCall(pass, call) {
 				continue
 			}
 			if len(assign.Lhs) <= i {
@@ -98,18 +99,51 @@ func checkFunctionForHTTPBody(pass *analysis.Pass, fn *ast.FuncDecl) {
 
 }
 
-func isHTTPResponseCall(call *ast.CallExpr) bool {
+func isHTTPResponseCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
-	pkg, ok := selector.X.(*ast.Ident)
+	obj := pass.TypesInfo.ObjectOf(selector.Sel)
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+	if obj.Pkg().Path() != "net/http" {
+		return false
+	}
+	fn, ok := obj.(*types.Func)
 	if !ok {
 		return false
 	}
-	if pkg.Name != "http" {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
 		return false
+	}
+	if recv := sig.Recv(); recv != nil {
+		recvType := recv.Type()
+
+		if ptr, ok := recvType.(*types.Pointer); ok {
+			recvType = ptr.Elem()
+		}
+
+		named, ok := recvType.(*types.Named)
+		if !ok {
+			return false
+		}
+
+		if named.Obj().Pkg() == nil ||
+			named.Obj().Pkg().Path() != "net/http" ||
+			named.Obj().Name() != "Client" {
+			return false
+		}
+
+		switch fn.Name() {
+		case "Do", "Get":
+			return true
+		default:
+			return false
+		}
 	}
 	switch selector.Sel.Name {
 	case "Get", "Post", "PostForm", "Head":
